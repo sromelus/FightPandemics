@@ -384,6 +384,12 @@ const NavigationLayout = (props) => {
               onChange={(e) =>
                 dispatchAction(SET_VALUE, stateKey, parseInt(e.target.value))
               }
+              onKeyDown={(e) => {
+                const re = /[0-99]/;
+                if (!re.test(e.key)) {
+                  e.preventDefault();
+                }
+              }}
             />
             <RadioGroupWithLabel label="How has COVID-19 impacted you?" />
           </>
@@ -618,9 +624,9 @@ const NavigationLayout = (props) => {
         <CookieAlert />
       </Drawer>
     </div>
-  ); 
+  );
 
-  return <>{renderNavigationBar()}</>; 
+  return <>{renderNavigationBar()}</>;
 };
 
 export default NavigationLayout;
