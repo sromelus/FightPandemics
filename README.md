@@ -148,6 +148,12 @@ We collaborate closely with the design and product team. The design team provide
 * For new pages, create a new route in `client/src/routes.js` and import a page component from `client/src/pages`
 * Refrain from making the Redux state too big as it will affect speed performance. React’s Context API is ONLY helpful for avoiding nested prop threading so stick with Redux where Context fails.
 
+#### Internationalization
+
+- We are using [i18next](https://www.i18next.com/overview/api) to manage localization on our platform. If you need to add text or change existing text, please do so in the `src/locales/translations/en_US` file. [Lokalise](https://lokalise.com/) is the tool we use to manage our translations. It is configured to automatically pull changes in `en_US` from `staging` branch and edit or add new keys on the Lokalise platform so our volunteers can go and translate the new changes.
+
+ - In order to not bottleneck development, keys that have not been translated in a language will be filled with the English translation. Once translations are completed on Lokalise, it will then initiate a PR to merge the translations into `staging`
+
 ## Deployment
 
 ### Git Branching Model
@@ -191,6 +197,8 @@ You can view the build logs in [GitHub Actions](https://github.com/FightPandemic
 ![Deployment URL](images/deployment_url.png?raw=true)
 
 Note that it may take a few minutes for the app to be accessible, or for changes to be reflected, since it takes time for AWS to spin up the Docker containers.
+
+Please note that review builds are shut down if no new commits are pushed to the branch in more than a day. This is controlled by an AWS Lambda function that runs every day at midnight PST. In order to revive the review build, simply push a new commit to the branch, merge or rebase from staging, or click the "Rerun all jobs" button on the review build page in Github Actions.
 
 ### Staging
 

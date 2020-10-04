@@ -1,5 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { Trans, useTranslation } from "react-i18next";
 import styled from "styled-components";
 
 import ImageButton from "components/Button/ImageButton";
@@ -10,10 +11,10 @@ import GTM from "constants/gtm-tags";
 const { typography } = theme;
 const { black, royalBlue, white, offWhite } = theme.colors;
 
-const needHelpInactive = require("assets/thermometer-unselected.svg");
-const needHelpActive = require("assets/thermometer-selected.svg");
-const offerHelpInactive = require("assets/help-gesture-unselected.svg");
-const offerHelpActive = require("assets/help-gesture-selected.svg");
+const needHelpInactive = require("assets/request-help-unselected.svg");
+const needHelpActive = require("assets/request-help-selected.svg");
+const offerHelpInactive = require("assets/offer-help-unselected.svg");
+const offerHelpActive = require("assets/offer-help-selected.svg");
 
 const FlexChild = styled.div`
   flex-grow: 1;
@@ -100,6 +101,8 @@ const StyledStrapline = styled(StyledWelcome)`
   @media only screen and ${mq.phone.narrow.max} {
     text-align: center;
     margin: 0 auto 1.5rem auto;
+    color: ${black};
+    font-size: ${typography.size.xlarge};
   }
 `;
 
@@ -158,23 +161,23 @@ const StyleLink = styled.p`
 `;
 
 const Home = (props) => {
+  const { t } = useTranslation();
+
   return (
     <MainContainer className="text-center home">
       <StyledIntro>
         <IntroText>
-          <Title
-            color="white"
-            size={theme.typography.size.xlarge}
-            weight="500"
-          >
+          <Title color="white" size={theme.typography.size.xlarge} weight="500">
             FightPandemics
           </Title>
 
           <StyledStrapline level={2} margin="none">
-            A place to offer and request help
+            {t("headline")}
           </StyledStrapline>
-          <StyledP>Pandemics will continue to happen.</StyledP>
-          <StyledP>We help communities prepare and respond.</StyledP>
+          <Trans
+            i18nKey="tagline"
+            components={[<StyledP />, <StyledP />]}
+          ></Trans>
         </IntroText>
       </StyledIntro>
 
@@ -188,7 +191,7 @@ const Home = (props) => {
               activeImg={needHelpActive}
               onClick={() => props.history.push("/need-help")}
             >
-              Request Help
+              {t("common.getHelp")}
             </ImageButton>
           </FlexChild>
           <FlexChild>
@@ -199,13 +202,13 @@ const Home = (props) => {
               activeImg={offerHelpActive}
               onClick={() => props.history.push("/offer-help")}
             >
-              Offer Help
+              {t("common.giveHelp")}
             </ImageButton>
           </FlexChild>
 
           <Link to="/feed">
             <StyleLink id={GTM.homePage.prefix + GTM.homePage.viewCommPost}>
-              View Help Board
+              {t("common.viewFeed")}
             </StyleLink>
           </Link>
         </OnboardingContainer>

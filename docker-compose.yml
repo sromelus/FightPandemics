@@ -6,6 +6,8 @@ services:
     environment:
       MONGO_INITDB_DATABASE: fightpandemics
     restart: always
+    ports:
+      - "27017:27017"
     networks:
       - fp_network
 
@@ -72,6 +74,23 @@ services:
     volumes:
       - ./cypresse2e/cypress:/app/cypress
       - ./cypresse2e/cypress.json:/app/cypress.json
+    working_dir: /app
+    networks:
+      - fp_network
+
+  mocha-integration:
+    build: 
+      context: mocha
+      dockerfile: Dockerfile
+    container_name: mocha-integration
+    depends_on:
+      - client
+    environment:
+      MOCHA_URL: http://backend-service:8000
+    command: dockerize -wait http://client:3000 -timeout 300s npm run test 
+    volumes:
+      - ./mocha/test/:/app/test/
+      - ./mocha/utils/:/app/utils/
     working_dir: /app
     networks:
       - fp_network

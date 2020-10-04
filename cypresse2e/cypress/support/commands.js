@@ -1,25 +1,25 @@
-// ***********************************************
-// This example commands.js shows you how to
-// create various custom commands and overwrite
-// existing commands.
-//
-// For more comprehensive examples of custom
-// commands please read more here:
-// https://on.cypress.io/custom-commands
-// ***********************************************
-//
-//
-// -- This is a parent command --
-// Cypress.Commands.add("login", (email, password) => { ... })
-//
-//
-// -- This is a child command --
-// Cypress.Commands.add("drag", { prevSubject: 'element'}, (subject, options) => { ... })
-//
-//
-// -- This is a dual command --
-// Cypress.Commands.add("dismiss", { prevSubject: 'optional'}, (subject, options) => { ... })
-//
-//
-// -- This will overwrite an existing command --
-// Cypress.Commands.overwrite("visit", (originalFn, url, options) => { ... })
+Cypress.Commands.add('checkFpLogoIsVisibleAndClickable', (fpLogoLocator) => {
+    var fpLogo = cy.get(fpLogoLocator);
+    fpLogo.should('be.visible').and('have.attr', 'alt', 'Fight Pandemics logo').click();
+});
+
+Cypress.Commands.add('pageContainsHeadingAndImage', (pageHeadingLocator, heading, pageImageLocator) => {
+    var pageHeading = cy.get(pageHeadingLocator);
+    pageHeading.should('be.visible').contains(heading);
+    var pageImage = cy.get(pageImageLocator);
+    pageImage.should('be.visible');
+});
+
+export const randomString = (length) => {
+    var result = '';
+    var characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    var charactersLength = characters.length;
+    for (var i = 0; i < length; i++) {
+        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    }
+    return result;
+};
+
+Cypress.Commands.add('generateRandomEmail', () => {
+    return randomString(8) + '.' + randomString(8) + '@' + randomString(5) + '.com';
+});

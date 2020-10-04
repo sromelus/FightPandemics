@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom";
 import { Provider } from "react-redux";
+import { HelmetProvider } from "react-helmet-async";
 import { createStore, applyMiddleware } from "redux";
 import thunk from "redux-thunk";
 import "antd/dist/antd.css";
@@ -13,6 +14,7 @@ import GlobalStyles from "./GlobalStyles";
 import * as serviceWorker from "./serviceWorker";
 import rootReducer from "./reducers";
 import TagManager from "react-gtm-module";
+import "./i18n";
 
 const tagManagerArgs = {
   gtmId: process.env.REACT_APP_GTM_ID,
@@ -24,8 +26,10 @@ const store = createStore(rootReducer, applyMiddleware(thunk));
 
 ReactDOM.render(
   <Provider store={store}>
-    <GlobalStyles />
-    <App />
+    <HelmetProvider>
+      <GlobalStyles />
+      <App />
+    </HelmetProvider>
   </Provider>,
   document.getElementById("root"),
 );

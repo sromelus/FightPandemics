@@ -1,12 +1,18 @@
 import React, { useEffect, useContext, useState } from "react";
 import styled from "styled-components";
 import { useForm, Controller } from "react-hook-form";
+import { useTranslation } from "react-i18next";
 import Checkbox from "components/Input/Checkbox";
 import { WhiteSpace } from "antd-mobile";
 import FormInput from "components/Input/FormInput";
+import { Alert } from "antd";
+import { connect } from "react-redux";
+import SuccessAlert from "components/Alert/SuccessAlert";
+import { ORANGE_RED, WHITE } from "../constants/colors";
 import { Link } from "react-router-dom";
 import InputLabel from "components/Input/Label";
 import orgData from "../assets/data/createOrganisationProfile";
+import { refetchUser } from "actions/authActions";
 import {
   EditLayout,
   TitlePictureWrapper,
@@ -44,6 +50,7 @@ import LocationInput from "../components/Input/LocationInput";
 import ProfilePic from "components/Picture/ProfilePic";
 import { getInitialsFromFullName } from "utils/userInfo";
 import { validateEmail } from "../utils/validators";
+import { mq } from "constants/theme";
 
 const errorStyles = {
   color: "#FF5656",
@@ -58,16 +65,54 @@ const InputWrapper = styled.div`
 `;
 
 const NEEDS = {
-  volunteers: "Volunteers",
   donations: "Donations",
-  staff: "Staff",
   other: "Other",
+  staff: "Staff",
+  volunteers: "Volunteers",
 };
 
-function EditOrganisationAccount(props) {
+const ErrorAlert = styled(Alert)`
+  background-color: ${ORANGE_RED};
+  margin: 3rem 6rem 0rem 0rem;
+  z-index: 10;
+  position: absolute;
+  width: 30%;
+  right: 1rem;
+  border: none;
+  border-radius: 0.5rem;
+  .ant-alert-message {
+    color: ${WHITE};
+  }
+
+  @media screen and (max-width: ${mq.phone.wide.maxWidth}) {
+    margin: auto;
+    position: relative;
+    width: 100%;
+    right: 0rem;
+  }
+`;
+
+const Container = styled.div`
+  margin-top: 5rem;
+`;
+
+const isSame = (formData, organisation) => {
+  if (formData.global === undefined) formData.global = false;
+  for (let key in formData) {
+    if (typeof formData[key] === "object") {
+      if (JSON.stringify(formData[key]) !== JSON.stringify(organisation[key]))
+        return false;
+    } else if (formData[key] !== organisation[key]) return false;
+  }
+  return true;
+};
+
+function EditOrganisationAccount({ refetchUser, history }) {
   // TODO: integrate location w proper react-hook-forms use
   const organisationId = window.location.pathname.split("/")[2];
   const [location, setLocation] = useState({});
+  const [isUpdateSuccess, handleSuccess] = useState(false);
+  const [isUpdateError, handleUpdateError] = useState(false);
   const { orgProfileState, orgProfileDispatch } = useContext(
     OrganisationContext,
   );
@@ -81,6 +126,7 @@ function EditOrganisationAccount(props) {
   } = useForm({
     mode: "change",
   });
+  const { t } = useTranslation();
   const { loading, organisation } = orgProfileState;
   const { name, email, global, needs } = organisation || {};
 
@@ -89,34 +135,54 @@ function EditOrganisationAccount(props) {
     clearError("location");
   };
 
+  const handleSuccessClose = () => {
+    handleSuccess(false);
+  };
+
   const onSubmit = async (formData) => {
     if (!location?.address) {
       // all location objects should have address (+coordinates), others optional
       return setError(
         "location",
         "required",
-        "Address is required. Please enter your address and select it from the drop-down",
+        t("profile.common.addressRequired"),
       );
     }
     Object.entries(NEEDS).map(([key, label]) => {
       if (formData.needs[key] === undefined) formData.needs[key] = needs[key];
     });
     formData.location = location;
-    orgProfileDispatch(updateOrganisation());
-    try {
-      const res = await axios.patch(
-        `/api/organisations/${organisationId}`,
-        formData,
-      );
-      orgProfileDispatch(updateOrganisationSuccess(res.data));
-      props.history.push(`/organisation/${res.data._id}`);
-    } catch (err) {
-      const message = err.response?.data?.message || err.message;
-      orgProfileDispatch(
-        updateOrganisationError(
-          `Failed updating organisation profile, reason: ${message}`,
-        ),
-      );
+    if (isSame(formData, orgProfileState.organisation)) {
+      history.push(`/organisation/${orgProfileState.organisation._id}`);
+    } else {
+      formData.location = location;
+      orgProfileDispatch(updateOrganisation());
+      try {
+        const res = await axios.patch(
+          `/api/organisations/${organisationId}`,
+          formData,
+        );
+        orgProfileDispatch(updateOrganisationSuccess(res.data));
+        handleSuccess(true);
+        setTimeout(() => {
+          handleSuccess(false);
+        }, 10000);
+        handleUpdateError(false);
+        refetchUser();
+      } catch (err) {
+        const message = err.response?.data?.message || err.message;
+        const translatedErrorMessage = t([
+          `error.${message}`,
+          `error.http.${message}`,
+        ]);
+        handleUpdateError(true);
+        handleSuccess(false);
+        orgProfileDispatch(
+          updateOrganisationError(
+            `${t("error.failedUpdatingOrgProfile")} ${translatedErrorMessage}`,
+          ),
+        );
+      }
     }
   };
 
@@ -129,36 +195,40 @@ function EditOrganisationAccount(props) {
         orgProfileDispatch(fetchOrganisationSuccess(res.data));
       } catch (err) {
         const message = err.response?.data?.message || err.message;
+        const translatedErrorMessage = t([
+          `error.${message}`,
+          `error.http.${message}`,
+        ]);
         orgProfileDispatch(
-          fetchOrganisationError(`Failed loading profile, reason: ${message}`),
+          fetchOrganisationError(
+            `${t("error.failedLoadingProfile")} ${translatedErrorMessage}`,
+          ),
         );
       }
     })();
-  }, [orgProfileDispatch, organisationId]);
+  }, [orgProfileDispatch, organisationId, t]);
 
-  const organisationInfo = {
-    // label name, variable name, value
-    "Organisation Name": [
-      "name",
-      name,
-      "Organisation name is required",
-      false,
-      {
-        value: 60,
-        message: "Max. 60 characters",
-      },
-    ],
-    "Organisation Contact E-mail": [
-      "email",
-      email,
-      "Email is required",
-      true,
-      {
-        value: 30,
-        message: "Max. 30 characters",
-      },
-    ],
+  const generateOrgInfoObject = () => {
+    const nameLabel = t("profile.org.name");
+    const emailLabel = t("profile.org.email");
+
+    return {
+      // label name, variable name, value
+      [nameLabel]: [
+        "name",
+        name,
+        t("profile.org.orgNameRequired"),
+        false,
+        {
+          value: 60,
+          message: t("profile.common.maxCharacters", { maxNum: 60 }),
+        },
+      ],
+      [emailLabel]: ["email", email, "", true],
+    };
   };
+
+  const organisationInfo = generateOrgInfoObject();
 
   const renderNeedSection = () => {
     if (organisation) {
@@ -173,23 +243,36 @@ function EditOrganisationAccount(props) {
                 control={control}
                 onChange={([event]) => event.target.checked}
               >
-                <Label inputColor="#000000">{label}</Label>
+                <Label inputColor="#000000">{t("profile.org." + key)}</Label>
               </Controller>
             </CheckBoxWrapper>
           ))}
           <span style={errorStyles}>
-            {errors.needs ? "Please select at least one option" : ""}
+            {errors.needs ? t("profile.common.selectOption") : ""}
           </span>
         </div>
       );
     }
   };
 
+  const injectTranslationsIfEmailError = (error) => {
+    if (error === undefined || Object.keys(error).length === 0) return "";
+    if (!error.message.startsWith("email")) return error;
+    return {
+      ...error,
+      message: t(`profile.common.${error.message}`),
+    };
+  };
+
   const renderFormInputs = () => {
     return Object.entries(organisationInfo).map(([key, value]) => {
       return (
         <div
-          key={key}
+          key={
+            key === "Organisation Name"
+              ? t("profile.org.name")
+              : t("profile.org.email")
+          }
           style={{
             display: "flex",
             flexDirection: "column",
@@ -203,11 +286,9 @@ function EditOrganisationAccount(props) {
             ref={register({
               required: value[2],
               maxLength: value[4],
-              validate: value[3]
-                ? (email) => validateEmail(email) || "Invalid email"
-                : null,
+              validate: value[3] ? (email) => validateEmail(email) : null,
             })}
-            error={errors[value[0]]}
+            error={injectTranslationsIfEmailError(errors[value[0]])}
             onChange={(event) => event.target.value}
           />
         </div>
@@ -226,7 +307,7 @@ function EditOrganisationAccount(props) {
               control={control}
               onChange={([event]) => event.target.checked}
             >
-              <Label inputColor="#646464">We are a global organisation</Label>
+              <Label inputColor="#646464">{t("profile.org.globalOrg")}</Label>
             </Controller>
           </CheckBoxWrapper>
         </HelpWrapper>
@@ -243,7 +324,7 @@ function EditOrganisationAccount(props) {
               <StyledSelect>
                 {orgData.type.options.map((option, i) => (
                   <StyledSelect.Option key={i} value={option.text}>
-                    {option.text}
+                    {t("profile.org.types." + i)}
                   </StyledSelect.Option>
                 ))}
               </StyledSelect>
@@ -258,7 +339,7 @@ function EditOrganisationAccount(props) {
               <StyledSelect>
                 {orgData.industry.options.map((option, i) => (
                   <StyledSelect.Option key={i} value={option.text}>
-                    {option.text}
+                    {t("profile.org.industries." + i)}
                   </StyledSelect.Option>
                 ))}
               </StyledSelect>
@@ -271,7 +352,7 @@ function EditOrganisationAccount(props) {
           />
           <span style={errorStyles}>
             {errors.type || errors.industry
-              ? "Please select organisation type and industry from dropdown"
+              ? t("profile.org.typeIndustryError")
               : ""}
           </span>
         </div>
@@ -283,7 +364,11 @@ function EditOrganisationAccount(props) {
     if (organisation) {
       return (
         <InputWrapper>
-          <InputLabel htmlFor="location" icon={Marker} label="Address" />
+          <InputLabel
+            htmlFor="location"
+            icon={Marker}
+            label={t("profile.common.address")}
+          />
           <LocationInput
             formError={errors.location}
             location={location}
@@ -292,7 +377,7 @@ function EditOrganisationAccount(props) {
         </InputWrapper>
       );
     } else {
-      return <p>Loading...</p>;
+      return <p>{t("comment.loading")}</p>;
     }
   };
 
@@ -312,52 +397,84 @@ function EditOrganisationAccount(props) {
     }
   };
 
-  if (loading) return <div>"loading"</div>;
+  if (loading) return <div>"{t("profile.common.loading")}"</div>;
   return (
     <Background>
-      <EditLayout>
-        <TitlePictureWrapper>
-          <CustomEditAccountHeader className="h4">
-            Edit Organisation Profile
-          </CustomEditAccountHeader>
-          <ToggleHeading>
-            <CustomHeading level={4} className="h4">
-              Account Information
-            </CustomHeading>
-          </ToggleHeading>
-          <FillEmptySpace />
-          <ProfilePicWrapper>{renderProfilePicture()}</ProfilePicWrapper>
-        </TitlePictureWrapper>
-        <FormLayout>
-          <OptionDiv>
-            <CustomLink isSelected>
-              <Link to={`/edit-organisation-account/${organisationId}`}>
-                Account Information
-              </Link>
-            </CustomLink>
-            <CustomLink>
-              <Link to={`/edit-organisation-profile/${organisationId}`}>
-                Profile Information
-              </Link>
-            </CustomLink>
-          </OptionDiv>
-          <CustomForm>
-            {renderFormInputs()}
-            {renderAddressInput()}
-            {renderGlobalCheckBox()}
-            <WhiteSpace />
-            <WhiteSpace />
-            {renderSelectItems()}
-            <Label>What are you looking for?</Label>
-            <HelpWrapper>{renderNeedSection()}</HelpWrapper>
-            <CustomSubmitButton primary="true" onClick={handleSubmit(onSubmit)}>
-              {loading ? "Saving Changes..." : "Save Changes"}
-            </CustomSubmitButton>
-          </CustomForm>
-        </FormLayout>
-      </EditLayout>
+      {isUpdateSuccess ? (
+        <>
+          <SuccessAlert
+            message={t("profile.org.updateSuccess")}
+            closable
+            afterClose={handleSuccessClose}
+          />
+        </>
+      ) : isUpdateError ? (
+        <>
+          <ErrorAlert message={orgProfileState.error} />
+        </>
+      ) : (
+        ""
+      )}
+      <Container>
+        <EditLayout>
+          <TitlePictureWrapper>
+            <CustomEditAccountHeader className="h4">
+              {t("profile.org.editOrgProfile")}
+            </CustomEditAccountHeader>
+            <ToggleHeading>
+              <CustomHeading level={4} className="h4">
+                {t("profile.common.accountInfo")}
+              </CustomHeading>
+            </ToggleHeading>
+
+            <FillEmptySpace />
+
+            <ProfilePicWrapper>{renderProfilePicture()}</ProfilePicWrapper>
+          </TitlePictureWrapper>
+
+          <FormLayout>
+            <OptionDiv>
+              <CustomLink isSelected>
+                <Link to={`/edit-organisation-account/${organisationId}`}>
+                  {t("profile.common.accountInfo")}
+                </Link>
+              </CustomLink>
+              <CustomLink>
+                <Link to={`/edit-organisation-profile/${organisationId}`}>
+                  {t("profile.common.profileInfo")}
+                </Link>
+              </CustomLink>
+            </OptionDiv>
+            <CustomForm>
+              {renderFormInputs()}
+              {renderAddressInput()}
+              {renderGlobalCheckBox()}
+              <WhiteSpace />
+              <WhiteSpace />
+              {renderSelectItems()}
+              <Label>{t("profile.org.seeking")}</Label>
+              <HelpWrapper>{renderNeedSection()}</HelpWrapper>
+              <CustomSubmitButton
+                primary="true"
+                onClick={handleSubmit(onSubmit)}
+              >
+                {loading
+                  ? t("profile.common.savingChanges")
+                  : t("profile.common.saveChanges")}
+              </CustomSubmitButton>
+            </CustomForm>
+          </FormLayout>
+        </EditLayout>
+      </Container>
     </Background>
   );
 }
 
-export default withOrganisationContext(EditOrganisationAccount);
+const mapDispatchToProps = {
+  refetchUser,
+};
+
+export default connect(
+  null,
+  mapDispatchToProps,
+)(withOrganisationContext(EditOrganisationAccount));

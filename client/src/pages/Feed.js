@@ -2,10 +2,11 @@ import React, {
   useReducer,
   useEffect,
   useCallback,
-  useRef,
   useState,
+  useRef,
 } from "react";
 import { useParams } from "react-router-dom";
+import { useTranslation, Trans } from "react-i18next";
 import styled from "styled-components";
 import axios from "axios";
 
@@ -20,7 +21,6 @@ import FeedWrapper from "components/Feed/FeedWrapper";
 import FilterBox from "components/Feed/FilterBox";
 import FiltersSidebar from "components/Feed/FiltersSidebar";
 import FiltersList from "components/Feed/FiltersList";
-import Loader from "components/Feed/StyledLoader";
 import Posts from "components/Feed/Posts";
 
 import {
@@ -65,9 +65,12 @@ export const isAuthorOrg = (organisations, author) => {
 };
 
 export const isAuthorUser = (user, post) => {
-  return user?._id === post?.author?.id ||
-  (user?.id === post?.author?.id && (user.ownUser === undefined || user.ownUser))
-}
+  return (
+    user?._id === post?.author?.id ||
+    (user?.id === post?.author?.id &&
+      (user.ownUser === undefined || user.ownUser))
+  );
+};
 
 const gtmTagsMap = {
   ALL: GTM.post.allPost,
@@ -113,7 +116,7 @@ const SiderWrapper = styled(Sider)`
 
 const FiltersWrapper = styled.div`
   border-top: 0.05rem solid rgba(0, 0, 0, 0.5);
-  margin: 0 2rem;
+  margin: 1.5rem 2rem 0;
   padding-top: 2rem;
   button {
     align-items: center;
@@ -185,6 +188,9 @@ const LayoutWrapper = styled(Layout)`
 
 const ContentWrapper = styled(Content)`
   margin: 0 1rem;
+  @media screen and (max-width: ${mq.phone.wide.maxWidth}) {
+    overflow-x: visible !important;
+  }
   @media screen and (min-width: ${mq.tablet.narrow.minWidth}) {
     margin: 3.3rem 8.5rem 3.3rem calc(29rem + 8.5rem);
   }
@@ -198,6 +204,7 @@ const HeaderWrapper = styled.div`
     margin-top: 0;
   }
   button {
+    flex-direction: column;
     align-items: center;
     background-color: transparent;
     border: none;
@@ -218,7 +225,29 @@ const HeaderWrapper = styled.div`
   }
 `;
 
+export const NoPosts = styled.div`
+  text-align: center;
+  position: relative;
+  top: 2em;
+  color: ${theme.colors.orangeRed};
+  font-size: 1.2em;
+  a {
+    color: ${theme.colors.royalBlue};
+  }
+`;
+
+const buttonPulse = styled.button`
+  background-color: rgba(255, 255, 0, 0.4);
+  padding: 0 0.2em;
+  border-radius: 3em;
+  height: 4em;
+  position: relative;
+  top: 1.3em;
+`;
+const PAGINATION_LIMIT = 10;
+const ARBITRARY_LARGE_NUM = 10000;
 const Feed = (props) => {
+  const { t } = useTranslation();
   const { id } = useParams();
   const [feedState, feedDispatch] = useReducer(feedReducer, {
     ...initialState,
@@ -227,7 +256,12 @@ const Feed = (props) => {
   const [selectedOptions, optionsDispatch] = useReducer(optionsReducer, {});
   const [posts, postsDispatch] = useReducer(postsReducer, postsState);
   const [isOnboarding, setOnboarding] = useState(true);
-
+  //react-virtualized loaded rows and row count.
+  const [itemCount, setItemCount] = useState(0);
+  const [toggleRefetch, setToggleRefetch] = useState(false);
+  const [totalPostCount, setTotalPostCount] = useState(ARBITRARY_LARGE_NUM);
+  const [filterURL, setFilterURL] = useState("");
+  const [objectiveURL, setObjectiveURL] = useState("");
   const {
     filterModal,
     showCreatePostModal,
@@ -237,11 +271,9 @@ const Feed = (props) => {
     applyFilters,
     showFilters,
   } = feedState;
-
   const filters = Object.values(filterOptions);
   const {
     error: postsError,
-    filterType,
     isLoading,
     loadMore,
     page,
@@ -249,9 +281,17 @@ const Feed = (props) => {
     status,
     deleteModalVisibility,
   } = posts;
+  const feedPosts = Object.entries(postsList);
+  const prevTotalPostCount = usePrevious(totalPostCount);
 
+  function usePrevious(value) {
+    const ref = useRef();
+    useEffect(() => {
+      ref.current = value;
+    });
+    return ref.current;
+  }
   const { history, isAuthenticated, user } = props;
-  let bottomBoundaryRef = useRef(null);
 
   const dispatchAction = (type, key, value) =>
     feedDispatch({ type, key, value });
@@ -267,7 +307,7 @@ const Feed = (props) => {
     // );
   };
 
-  const refetchPosts = () => {
+  const refetchPosts = (isLoading, loadMore) => {
     if (filterModal) {
       dispatchAction(TOGGLE_STATE, "filterModal");
     }
@@ -278,8 +318,16 @@ const Feed = (props) => {
     dispatchAction(SET_VALUE, "applyFilters", true);
     dispatchAction(SET_VALUE, "location", "");
     dispatchAction(SET_VALUE, "activePanel", null);
-    postsDispatch({ type: RESET_PAGE, filterType: "" });
+    postsDispatch({
+      type: RESET_PAGE,
+      isLoading,
+      loadMore,
+      filterType: "",
+    });
     optionsDispatch({ type: REMOVE_ALL_OPTIONS, payload: {} });
+    if (page === 0) {
+      setToggleRefetch(!toggleRefetch);
+    }
   };
 
   const handleQuit = (e) => {
@@ -309,7 +357,9 @@ const Feed = (props) => {
   const handleCreatePost = () => {
     if (isAuthenticated) {
       dispatchAction(TOGGLE_STATE, "showCreatePostModal");
+      sessionStorage.removeItem("createPostAttemptLoggedOut");
     } else {
+      sessionStorage.setItem("createPostAttemptLoggedOut", true);
       history.push(LOGIN);
     }
   };
@@ -387,83 +437,111 @@ const Feed = (props) => {
     });
   };
 
-  const loadPosts = useCallback(async () => {
-    const objectiveURL = () => {
+  useEffect(() => {
+    (() => {
       let objective = selectedType;
       if (
-        selectedOptions["offer or request help"] &&
-        selectedOptions["offer or request help"].length < 2
+        selectedOptions["lookingFor"] &&
+        selectedOptions["lookingFor"].length < 2
       ) {
         objective =
-          selectedOptions["offer or request help"][0] === "Request Help"
+          selectedOptions["lookingFor"][0] === "Request Help"
             ? "REQUEST"
             : "OFFER";
       }
       switch (objective) {
         case "REQUEST":
-          return "&objective=request";
+          setObjectiveURL("&objective=request");
+          break;
         case "OFFER":
-          return "&objective=offer";
+          setObjectiveURL("&objective=offer");
+          break;
         default:
-          return "";
+          setObjectiveURL("");
       }
-    };
-    const filterURL = () => {
+    })();
+  }, [selectedOptions, selectedType]);
+
+  useEffect(() => {
+    (() => {
       const filterObj = { ...selectedOptions };
-      delete filterObj["offer or request help"];
+      delete filterObj["lookingFor"];
       if (location) filterObj.location = location;
-      return Object.keys(filterObj).length === 0
-        ? ""
-        : `&filter=${encodeURIComponent(JSON.stringify(filterObj))}`;
-    };
-    const limit = 5;
-    const skip = page * limit;
-    const baseURL = `/api/posts?limit=${limit}&skip=${skip}`;
-    let endpoint = `${baseURL}${objectiveURL()}${filterURL()}`;
-    let response = {};
-    if (isLoading) {
-      return;
-    }
+      const getFilter =
+        Object.keys(filterObj).length === 0
+          ? ""
+          : `&filter=${encodeURIComponent(JSON.stringify(filterObj))}`;
+      setFilterURL(getFilter);
+    })();
+  }, [location, selectedOptions]);
 
-    await postsDispatch({ type: FETCH_POSTS });
+  useEffect(() => {
+    const loadPosts = async () => {
+      const limit = PAGINATION_LIMIT;
+      const skip = page * limit;
+      const baseURL = `/api/posts?&includeMeta=true&limit=${limit}&skip=${skip}`;
+      let endpoint = `${baseURL}${objectiveURL}${filterURL}`;
+      postsDispatch({ type: FETCH_POSTS });
 
-    try {
-      response = await axios.get(endpoint);
-    } catch (error) {
-      await postsDispatch({ error, type: ERROR_POSTS });
-    }
-
-    if (response && response.data && response.data.length) {
-      const loadedPosts = response.data.reduce((obj, item) => {
-        obj[item._id] = item;
-        return obj;
-      }, {});
-
-      if (postsList) {
-        await postsDispatch({
-          type: SET_POSTS,
-          posts: { ...postsList, ...loadedPosts },
-        });
-      } else {
-        await postsDispatch({
-          type: SET_POSTS,
-          posts: { ...loadedPosts },
-        });
+      try {
+        const {
+          data: { data: posts, meta },
+        } = await axios.get(endpoint);
+        if (posts.length && meta.total) {
+          if (prevTotalPostCount !== meta.total) {
+            setTotalPostCount(meta.total);
+          }
+          if (posts.length < limit) {
+            postsDispatch({
+              type: SET_LOADING,
+              isLoading: true,
+              loadMore: false,
+            });
+          } else if (meta.total === limit) {
+            postsDispatch({
+              type: SET_LOADING,
+              isLoading: true,
+              loadMore: false,
+            });
+          }
+          const loadedPosts = posts.reduce((obj, item) => {
+            obj[item._id] = item;
+            return obj;
+          }, {});
+          if (postsList) {
+            postsDispatch({
+              type: SET_POSTS,
+              posts: { ...postsList, ...loadedPosts },
+            });
+          } else {
+            postsDispatch({
+              type: SET_POSTS,
+              posts: { ...loadedPosts },
+            });
+          }
+        } else if (posts) {
+          postsDispatch({
+            type: SET_POSTS,
+            posts: { ...postsList },
+          });
+          postsDispatch({
+            type: SET_LOADING,
+            isLoading: false,
+            loadMore: false,
+          });
+        } else {
+          postsDispatch({ type: SET_LOADING });
+        }
+      } catch (error) {
+        postsDispatch({ error, type: ERROR_POSTS });
       }
-    } else if (response && response.data) {
-      await postsDispatch({
-        type: SET_POSTS,
-        posts: { ...postsList },
-      });
-      await postsDispatch({
-        type: SET_LOADING,
-        isLoading: false,
-        loadMore: false,
-      });
-    } else {
-      await postsDispatch({ type: SET_LOADING });
+      dispatchAction(SET_VALUE, "applyFilters", true);
+    };
+
+    if (!showFilters || !filterModal) {
+      loadPosts();
     }
-  }, [page, location, selectedOptions, selectedType, isLoading, postsList]);
+  }, [filterURL, objectiveURL, page, showFilters, toggleRefetch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (applyFilters) {
@@ -471,15 +549,17 @@ const Feed = (props) => {
         delete selectedOptions["providers"];
         setOnboarding(false);
       }
-      loadPosts();
     }
-  }, [location, page, filterType, selectedOptions, applyFilters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedOptions, applyFilters, isOnboarding]);
 
   useEffect(() => {
     // Onboarding
     if (props.history.location.state) {
       const handleOnboardingOptions = (option, label) => {
-        optionsDispatch({ type: ADD_OPTION, payload: { option, label } });
+        optionsDispatch({
+          type: ADD_OPTION,
+          payload: { option: option.value, label },
+        });
       };
 
       const {
@@ -534,28 +614,31 @@ const Feed = (props) => {
     dispatchAction(SET_VALUE, "applyFilters", true);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const scrollObserver = useCallback(
-    (node) => {
-      new IntersectionObserver((entries) => {
-        entries.forEach(async (entry) => {
-          if (entry.intersectionRatio > 0 && !isLoading && loadMore) {
-            await postsDispatch({ type: NEXT_PAGE });
-          }
+  const isItemLoaded = useCallback((index) => !!feedPosts[index], [feedPosts]);
+
+  const loadNextPage = useCallback(
+    ({ stopIndex }) => {
+      dispatchAction(SET_VALUE, "applyFilters", false);
+      if (
+        !isLoading &&
+        loadMore &&
+        stopIndex >= feedPosts.length &&
+        feedPosts.length
+      ) {
+        return new Promise((resolve) => {
+          postsDispatch({ type: NEXT_PAGE });
+          resolve();
         });
-      }).observe(node);
+      } else {
+        return Promise.resolve();
+      }
     },
-    [postsDispatch, loadMore, isLoading],
+    [feedPosts.length, isLoading, loadMore],
   );
 
   useEffect(() => {
-    let observer;
-    if (bottomBoundaryRef.current) {
-      observer = scrollObserver(bottomBoundaryRef.current);
-    }
-    return () => {
-      observer && observer.disconnect();
-    };
-  }, [scrollObserver, bottomBoundaryRef]);
+    setItemCount(loadMore ? feedPosts.length + 1 : feedPosts.length);
+  }, [feedPosts.length, loadMore]);
 
   const postDelete = async (post) => {
     let deleteResponse;
@@ -574,11 +657,16 @@ const Feed = (props) => {
           };
           delete allPosts[post._id];
 
-          await postsDispatch({
-            type: SET_POSTS,
-            posts: allPosts,
-          });
+          setTotalPostCount(totalPostCount - 1);
+          if (totalPostCount < 10) {
+            const isLoading = true;
+            const loadMore = false;
+            refetchPosts(isLoading, loadMore);
+          } else {
+            refetchPosts();
+          }
         }
+        setTotalPostCount(totalPostCount - 1);
       } catch (error) {
         console.log({
           error,
@@ -586,6 +674,8 @@ const Feed = (props) => {
       }
     }
   };
+
+  const emptyFeed = () => Object.keys(postsList).length < 1 && !isLoading;
 
   return (
     <FeedContext.Provider
@@ -596,6 +686,7 @@ const Feed = (props) => {
         location,
         dispatchAction,
         selectedOptions,
+        selectedType,
         handleShowFilters,
         handleOption,
         handleFilterModal,
@@ -604,6 +695,7 @@ const Feed = (props) => {
         handleOnClose,
         showFilters,
         handlePostLike,
+        totalPostCount,
       }}
     >
       <FeedWrapper>
@@ -613,7 +705,7 @@ const Feed = (props) => {
             className="site-layout-background"
             width="29rem"
           >
-            <div>
+            <>
               <MenuWrapper
                 defaultSelectedKeys={["ALL"]}
                 selectedKeys={[selectedType]}
@@ -621,7 +713,7 @@ const Feed = (props) => {
               >
                 {Object.keys(HELP_TYPE).map((item, index) => (
                   <Menu.Item key={item} id={gtmTag(gtmTagsMap[item])}>
-                    {HELP_TYPE[item]}
+                    {t("feed." + item.toLowerCase())}
                   </Menu.Item>
                 ))}
               </MenuWrapper>
@@ -633,21 +725,22 @@ const Feed = (props) => {
                   <span>
                     <FiltersIcon />
                   </span>
-                  Filters
+                  {t("feed.filters.title")}
                 </button>
                 <FiltersList />
               </FiltersWrapper>
-            </div>
+            </>
             <FiltersSidebar gtmPrefix={GTM.feed.prefix} />
           </SiderWrapper>
           <ContentWrapper>
-            <HeaderWrapper>
-              <h1>Help Board</h1>
+            <HeaderWrapper empty={emptyFeed()}>
+              <h1>{t("feed.title")}</h1>
+
               <button
                 id={gtmTag(GTM.post.createPost)}
                 onClick={handleCreatePost}
               >
-                Create a post
+                {t("post.create")}
                 <CreatePostIcon
                   id={gtmTag(GTM.post.createPost)}
                   src={creatPost}
@@ -661,23 +754,47 @@ const Feed = (props) => {
               isAuthenticated={isAuthenticated}
               filteredPosts={postsList}
               handlePostLike={handlePostLike}
-              loadPosts={loadPosts}
               postDelete={postDelete}
               user={user}
               deleteModalVisibility={deleteModalVisibility}
               handlePostDelete={handlePostDelete}
               handleCancelPostDelete={handleCancelPostDelete}
+              isNextPageLoading={isLoading}
+              loadNextPage={loadNextPage}
+              itemCount={itemCount}
+              isItemLoaded={isItemLoaded}
+              hasNextPage={loadMore}
+              totalPostCount={totalPostCount}
             />
             {status === ERROR_POSTS && (
-              <ErrorAlert message={postsError.message} />
+              <ErrorAlert
+                message={t([
+                  `error.${postsError.message}`,
+                  `error.http.${postsError.message}`,
+                ])}
+              />
             )}
-            {isLoading ? <Loader /> : <></>}
-            <CreatePostIcon
-              id={gtmTag(GTM.post.createPost)}
-              src={creatPost}
-              onClick={handleCreatePost}
-              className="create-post"
-            />
+
+            {emptyFeed() ? (
+              <NoPosts>
+                <Trans
+                  i18nKey="feed.noResults"
+                  components={[
+                    <a
+                      id={gtmTag(GTM.post.createPost)}
+                      onClick={handleCreatePost}
+                    />,
+                  ]}
+                />
+              </NoPosts>
+            ) : (
+              <CreatePostIcon
+                id={gtmTag(GTM.post.createPost)}
+                src={creatPost}
+                onClick={handleCreatePost}
+                className="create-post"
+              />
+            )}
           </ContentWrapper>
         </LayoutWrapper>
         <CreatePost
@@ -687,7 +804,6 @@ const Feed = (props) => {
           visible={showCreatePostModal}
           user={user}
         />
-        {!isLoading && <div id="list-bottom" ref={bottomBoundaryRef}></div>}
       </FeedWrapper>
     </FeedContext.Provider>
   );

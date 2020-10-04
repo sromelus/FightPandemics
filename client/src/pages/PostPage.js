@@ -1,16 +1,18 @@
 import React, { useEffect, useReducer } from "react";
 import { useHistory, useParams } from "react-router-dom";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import styled from "styled-components";
 import axios from "axios";
-import isEmpty from 'lodash/isEmpty';
+import isEmpty from "lodash/isEmpty";
 
 // Local
 import EditPost from "components/CreatePost/EditPost";
-import { ButtonsContainer } from "pages/OrgProfileComplete";
+import { ProfileCompletedButtonsWrapper } from "components/CompletedProfile/CompletedProfile";
 import Loader from "components/Feed/StyledLoader";
 import Post, { CONTENT_LENGTH } from "components/Feed/Post";
 import { StyledPostPage } from "components/Feed/StyledPostPage";
+import PostMetaContainer from "components/Meta/PostMetaContainer";
 import { typeToTag } from "assets/data/formToPostMappings";
 import { isAuthorOrg, isAuthorUser } from "pages/Feed";
 import { postReducer, postState } from "hooks/reducers/postReducers";
@@ -65,7 +67,7 @@ const Title = styled.h2`
 `;
 
 const Body = styled.p`
-  margin-bottom: 3rem
+  margin-bottom: 3rem;
 `;
 
 const StyledLink = styled(Link)`
@@ -93,6 +95,7 @@ const PostPage = ({ user, updateComments, isAuthenticated }) => {
   const history = useHistory();
   const { postId } = useParams();
   const [post, postDispatch] = useReducer(postReducer, postState);
+  const { t } = useTranslation();
   const dispatchPostAction = (type, key1, value1, key2, value2) => {
     let obj = { type };
 
@@ -317,27 +320,26 @@ const PostPage = ({ user, updateComments, isAuthenticated }) => {
   };
 
   const isPostDeleted = isEmpty(post.author) && post.status === SET_POST;
- 
+
   useEffect(() => {
     loadPost(); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if(isPostDeleted) return (
-    <Container>
-      <Title>Ahh... snap!</Title>
-      <Body>
-        The post you have been looking for has expired. Please check our Help Board for more such posts.
-      </Body>
-      <ButtonsContainer>
-        <StyledLink
-          id={GTM.organisation.completedPrefix + GTM.profile.continueToFeed}
-          to="/feed"
-        >
-          Help Board
-        </StyledLink>
-      </ButtonsContainer>
-    </Container>
-  );
+  if (isPostDeleted)
+    return (
+      <Container>
+        <Title>{t("post.expireTitle")}</Title>
+        <Body>{t("post.expire")}</Body>
+        <ProfileCompletedButtonsWrapper>
+          <StyledLink
+            id={GTM.organisation.completedPrefix + GTM.profile.continueToFeed}
+            to="/feed"
+          >
+            {t("feed.title")}
+          </StyledLink>
+        </ProfileCompletedButtonsWrapper>
+      </Container>
+    );
   return (
     <StyledPostPage>
       {postId && (
@@ -357,6 +359,7 @@ const PostPage = ({ user, updateComments, isAuthenticated }) => {
         >
           {post && dispatchPostAction && postLength ? (
             <>
+              <PostMetaContainer post={post}></PostMetaContainer>
               <Post
                 currentPost={post}
                 deleteModalVisibility={deleteModalVisibility}
